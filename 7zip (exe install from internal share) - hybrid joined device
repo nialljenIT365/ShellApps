@@ -12,10 +12,10 @@ if (!(Test-Path $installerPath)) {
 # Check if the MSI file exists
 return Test-Path $installerFullPath
 
-##############DETECTION SCRIPT##############
+##############DETECTION SCRIPT############################
 
 
-##############INSTALL SCRIPT##############
+##############INSTALL SCRIPT############################
 
 #description: Install 7Zip
 
@@ -146,3 +146,30 @@ function Delete-Sources {
 }
 Delete-Sources -destinationFolder $destinationPath
 Remove-PSDrive -Name Z
+##############INSTALL SCRIPT############################
+
+##############UNINSTALL SCRIPT############################
+# Define the paths to the uninstaller for both 64-bit and 32-bit versions
+$uninstallPaths = @(
+    "C:\Program Files\7-Zip\Uninstall.exe",
+    "C:\Program Files (x86)\7-Zip\Uninstall.exe"
+)
+
+# Initialize a flag to track if any uninstaller is found
+$uninstallerFound = $false
+
+# Loop through each path to check if the uninstaller exists
+foreach ($uninstallPath in $uninstallPaths) {
+    if (Test-Path $uninstallPath) {
+        $uninstallerFound = $true
+        Write-Output "Found uninstaller at $uninstallPath. Initiating silent uninstallation..."
+        Start-Process -FilePath $uninstallPath -ArgumentList "/S" -Wait
+    }
+}
+
+# If no uninstaller was found, output a message
+if (-not $uninstallerFound) {
+    Write-Output "No 7-Zip uninstaller found in the default locations."
+}
+
+##############UNINSTALL SCRIPT############################
