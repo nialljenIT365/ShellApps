@@ -1,0 +1,180 @@
+##############DETECTION SCRIPT##############
+#description: Detect 7zip
+$installerPath = "C:\Program Files\7-Zip"
+$installerFileName = "Uninstall.exe"
+$installerFullPath = Join-Path $installerPath $installerFileName
+
+# Check if the folder exists first
+if (!(Test-Path $installerPath)) {
+    return $false
+}
+
+# Check if the MSI file exists
+return Test-Path $installerFullPath
+
+##############DETECTION SCRIPT############################
+
+
+##############INSTALL SCRIPT############################
+
+#description: Install 7Zip
+
+######################### CHANGE ME #########################
+# Define Storage Account and File Share Name
+$StorageAccountName = "<StorageAccountName>"
+$FileShareName = "<FileShareName>"
+$ParentShare = "<ParentShare>"
+# Define Application Name
+$ApplicationName = "7zip"
+$ApplicationInstaller = "7z2301-x64.exe"
+$argumentList = "/S"
+######################### CHANGE ME #########################
+
+######################### DO NOT CHANGE #########################
+# Define Base Source Path
+$StorageAccountFQDN = "$StorageAccountName.file.core.windows.net"
+$basePath = "\\$StorageAccountName.file.core.windows.net\$FileShareName\$ParentShare\$ApplicationName"
+$sourcePath = Join-Path -Path $basePath -ChildPath $ApplicationInstaller
+######################### DO NOT CHANGE #########################
+
+######################### CHANGE ONLY IF REQUIRED IN DIFFERENT DESTINATION #########################
+# Define Base Destination Path
+$baseDestinationPath = "C:\Packages\"
+if (-Not (Test-Path $baseDestinationPath)) {
+        New-Item -Path $baseDestinationPath -ItemType Directory
+        Write-Output "Created destination directory at $baseDestinationPath"
+    }
+$logFileFolder = "C:\Packages\logs\"
+if (-Not (Test-Path $logFileFolder)) {
+        New-Item -Path $logFileFolder -ItemType Directory
+        Write-Output "Created destination directory at $logFileFolder"
+    }
+$destinationPath = "$baseDestinationPath$ApplicationName\"
+if (-Not (Test-Path $destinationPath)) {
+        New-Item -Path $destinationPath -ItemType Directory
+        Write-Output "Created destination directory at $destinationPath"
+    }
+
+$installFilePath = "$destinationPath$ApplicationInstaller"
+$logFileLocation = "$logFileFolder$ApplicationInstaller.log"
+######################### CHANGE ONLY IF REQUIRED IN DIFFERENT DESTINATION #########################
+
+# Connect to Source Location and Copy Application Installer
+$connectTestResult = Test-NetConnection -ComputerName $StorageAccountFQDN -Port 445
+if ($connectTestResult.TcpTestSucceeded) {
+    $UserName = "localhost\$StorageAccountName"
+    $key = $SecureVars.SecureVarName
+    $cmdKeyArgs = "/add:`"$StorageAccountFQDN`" /user:`"$UserName`" /pass:`"$key`""
+    cmd.exe /C "cmdkey $cmdKeyArgs"
+    New-PSDrive -Name Z -PSProvider FileSystem -Root "$basePath"
+    Copy-Item -Path $sourcePath -Destination $destinationPath -Recurse -Force
+}
+
+# Start the process with the specified file path and argument list
+try {
+    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processInfo.FileName = $installFilePath
+    # Output install path to the console and log file
+    $installPathMessage = "Install File Path is: $($processInfo.FileName)"
+    Write-Output $installPathMessage
+    Write-Output $argumentList
+    Out-File -FilePath $logFileLocation -Append -InputObject $installPathMessage
+    Out-File -FilePath $logFileLocation -Append -InputObject $argumentList
+
+    $processInfo.Arguments = $argumentList
+    $processInfo.RedirectStandardOutput = $true
+    $processInfo.RedirectStandardError = $true
+    $processInfo.UseShellExecute = $false
+    $processInfo.CreateNoWindow = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $processInfo
+    $process.Start() | Out-Null
+    $process.WaitForExit()
+
+    # Capture the output and error streams
+    $stdOut = $process.StandardOutput.ReadToEnd()
+    $stdErr = $process.StandardError.ReadToEnd()
+
+    # Write the output and error streams to the log file
+    $stdOut | Out-File -FilePath $logFileLocation -Append
+    $stdErr | Out-File -FilePath $logFileLocation -Append
+
+    # Output installation completion message to the console and log file
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $completionMessage = "$installFilePath $argumentList completed with exit code: $($process.ExitCode)"
+    $logEntry = "[$timestamp] $completionMessage"
+
+    Write-Output $logEntry
+    Out-File -FilePath $logFileLocation -Append -InputObject $logEntry
+
+} catch {
+    Write-Error "An error occurred during installation: $_"
+    $_.Exception.Message | Out-File -FilePath $logFileLocation -Append
+}
+
+function Delete-Sources {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$destinationFolder
+    )
+
+    # Ensure the script runs with administrative privileges
+    if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+        Write-Output "This script requires administrative privileges."
+        return
+    }
+
+    try {
+        # Check if the destination folder exists
+        if (Test-Path -Path $destinationFolder) {
+            # Force delete the destination folder and all contents
+            Remove-Item -Path $destinationFolder -Recurse -Force
+            Write-Output "Deleted the folder: $destinationFolder"
+        } else {
+            Write-Output "The specified folder does not exist: $destinationFolder"
+            return
+        }
+
+        # Check if the parent folder is empty
+        $parentFolder = Split-Path -Path $destinationFolder -Parent
+        if ((Get-ChildItem -Path $parentFolder).Count -eq 0) {
+            # Delete the parent folder if it is empty
+            Remove-Item -Path $parentFolder -Force
+            Write-Output "Deleted the empty parent folder: $parentFolder"
+        }
+    } 
+    catch {
+        Write-Error "An error occurred: $_"
+    }
+}
+Delete-Sources -destinationFolder $destinationPath
+Remove-PSDrive -Name Z
+cmd.exe /C "cmdkey /delete:$StorageAccountFQDN"
+##############INSTALL SCRIPT############################
+
+##############UNINSTALL SCRIPT############################
+# Define the paths to the uninstaller for both 64-bit and 32-bit versions
+$uninstallPaths = @(
+    "C:\Program Files\7-Zip\Uninstall.exe",
+    "C:\Program Files (x86)\7-Zip\Uninstall.exe"
+)
+
+# Initialize a flag to track if any uninstaller is found
+$uninstallerFound = $false
+
+# Loop through each path to check if the uninstaller exists
+foreach ($uninstallPath in $uninstallPaths) {
+    if (Test-Path $uninstallPath) {
+        $uninstallerFound = $true
+        Write-Output "Found uninstaller at $uninstallPath. Initiating silent uninstallation..."
+        Start-Process -FilePath $uninstallPath -ArgumentList "/S" -Wait
+    }
+}
+
+# If no uninstaller was found, output a message
+if (-not $uninstallerFound) {
+    Write-Output "No 7-Zip uninstaller found in the default locations."
+}
+
+##############UNINSTALL SCRIPT############################
